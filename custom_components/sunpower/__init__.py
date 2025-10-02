@@ -29,6 +29,7 @@ from .const import (
     SUNPOWER_COORDINATOR,
     SUNPOWER_HOST,
     SUNPOWER_OBJECT,
+    SUNPOWER_SERIAL_SUFFIX,
     SUNPOWER_UPDATE_INTERVAL,
     SUNVAULT_DEVICE_TYPE,
     SUNVAULT_UPDATE_INTERVAL,
@@ -331,7 +332,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     entry_id = entry.entry_id
 
     hass.data[DOMAIN].setdefault(entry_id, {})
-    sunpower_monitor = SunPowerMonitor(entry.data[SUNPOWER_HOST])
+    # Create monitor in executor since __init__ makes blocking calls
+    sunpower_monitor = await hass.async_add_executor_job(
+        SunPowerMonitor,
+        entry.data[SUNPOWER_HOST],
+        None,  # Auto-fetch from PVS
+    )
     sunpower_update_invertal = entry.options.get(
         SUNPOWER_UPDATE_INTERVAL,
         DEFAULT_SUNPOWER_UPDATE_INTERVAL,

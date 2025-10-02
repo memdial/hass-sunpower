@@ -19,6 +19,7 @@ from .const import (
     SUNPOWER_DESCRIPTIVE_NAMES,
     SUNPOWER_HOST,
     SUNPOWER_PRODUCT_NAMES,
+    SUNPOWER_SERIAL_SUFFIX,
     SUNPOWER_UPDATE_INTERVAL,
     SUNVAULT_UPDATE_INTERVAL,
 )
@@ -43,16 +44,38 @@ async def validate_input(hass: core.HomeAssistant, data):
 
     Data has the keys from DATA_SCHEMA with values provided by the user.
     """
-
-    spm = SunPowerMonitor(data[SUNPOWER_HOST])
-    name = "PVS {}".format(data[SUNPOWER_HOST])
+    
+    # First check if PVS supports LocalAPI
+    host = data[SUNPOWER_HOST]
+    support_check = await hass.async_add_executor_job(
+        SunPowerMonitor.check_localapi_support, host
+    )
+    
+    if not support_check["supported"]:
+        error_msg = support_check.get("error", "Unknown error")
+        _LOGGER.error(f"LocalAPI not supported on {host}: {error_msg}")
+        raise CannotConnect(f"LocalAPI not supported: {error_msg}")
+    
+    _LOGGER.info(
+        f"PVS at {host} supports LocalAPI: "
+        f"Build {support_check['build']}, Version {support_check['version']}"
+    )
+    
+    # Let SunPowerMonitor auto-fetch serial suffix (no UI field)
+    # Create monitor in executor since __init__ makes blocking calls
     try:
+        spm = await hass.async_add_executor_job(
+            SunPowerMonitor, host, None
+        )
+        name = f"PVS {support_check.get('version', host)}"
+        
+        # Test connection by fetching system info
         response = await hass.async_add_executor_job(spm.network_status)
-        _LOGGER.debug("Got from %s %s", data[SUNPOWER_HOST], response)
+        _LOGGER.debug("Got from %s %s", host, response)
+        
+        return {"title": name}
     except ConnectionException as error:
         raise CannotConnect from error
-
-    return {"title": name}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
