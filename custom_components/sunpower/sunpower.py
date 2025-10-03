@@ -27,7 +27,8 @@ class SunPowerMonitor:
 
     # Optional hardcoded serial suffix fallback. Set this to your last 5 chars if you prefer to hardcode.
     # This value is only used if no serial suffix is supplied via constructor or environment variable.
-    HARDCODED_SERIAL_SUFFIX = "A1651"
+    # WARNING: Do not commit actual credentials to version control!
+    HARDCODED_SERIAL_SUFFIX = ""
     
     # Minimum firmware build number that supports LocalAPI
     MIN_LOCALAPI_BUILD = 61840
@@ -49,15 +50,16 @@ class SunPowerMonitor:
         
         # Resolve serial suffix: provided -> auto-fetched -> env var -> hardcoded
         env_suffix = os.environ.get("SUNPOWER_SERIAL_SUFFIX", "").strip()
-        hardcoded = self.HARDCODED_SERIAL_SUFFIX.strip()
+        hardcoded = self.HARDCODED_SERIAL_SUFFIX.strip() if self.HARDCODED_SERIAL_SUFFIX else ""
         resolved = (serial_suffix or "").strip() or env_suffix or hardcoded
         
         if not resolved:
             raise ConnectionException(
-                "Missing serial suffix. Provide last 5 of PVS serial via UI, env SUNPOWER_SERIAL_SUFFIX, or set HARDCODED_SERIAL_SUFFIX in sunpower.py",
+                "Missing serial suffix. Auto-detection failed. Please set SUNPOWER_SERIAL_SUFFIX environment variable.",
             )
         
         self.serial_suffix = resolved
+        self._session_token = None
         self._login()
     
     def _fetch_serial_suffix(self) -> str:
@@ -158,15 +160,20 @@ class SunPowerMonitor:
             # Extract session token and store it for subsequent requests
             session_token = data.get("session")
             if not session_token:
-                raise ParseException(f"No session token in response: {data}")
+                raise ParseException("Authentication failed: no session token received")
             
             # Store session token in session headers for all future requests
             self.session.headers.update({"Cookie": f"session={session_token}"})
+            self._session_token = session_token
             
+        except requests.exceptions.HTTPError as error:
+            if error.response.status_code == 401:
+                raise ConnectionException("Authentication failed: invalid credentials")
+            raise ConnectionException(f"Authentication failed: HTTP {error.response.status_code}")
         except requests.exceptions.RequestException as error:
-            raise ConnectionException from error
+            raise ConnectionException("Authentication failed: network error")
         except simplejson.errors.JSONDecodeError as error:
-            raise ParseException from error
+            raise ParseException("Authentication failed: invalid response format")
 
     def _vars(self, *, names=None, match=None, cache=None, fmt_obj=True):
         """Query /vars endpoint.
@@ -188,13 +195,20 @@ class SunPowerMonitor:
         
         try:
             resp = self.session.get(f"{self.base}/vars", params=params, timeout=self.timeout)
+            
+            # Handle session expiration
+            if resp.status_code == 401 or resp.status_code == 403:
+                # Re-authenticate and retry
+                self._login()
+                resp = self.session.get(f"{self.base}/vars", params=params, timeout=self.timeout)
+            
             resp.raise_for_status()
             data = resp.json()
             return data
         except requests.exceptions.RequestException as error:
-            raise ConnectionException from error
+            raise ConnectionException("Failed to query device variables")
         except (simplejson.errors.JSONDecodeError, ValueError) as error:
-            raise ParseException from error
+            raise ParseException("Failed to parse device response")
 
     def _fetch_meters(self):
         # Fetch all meter variables and group by device index

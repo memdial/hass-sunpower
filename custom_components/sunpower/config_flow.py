@@ -2,6 +2,8 @@
 
 import logging
 
+import re
+
 import voluptuous as vol
 from homeassistant import (
     config_entries,
@@ -30,6 +32,23 @@ from .sunpower import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Regex for validating IP addresses and hostnames
+IP_REGEX = re.compile(
+    r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'
+    r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+)
+HOSTNAME_REGEX = re.compile(
+    r'^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)'
+    r'(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$'
+)
+
+def validate_host(host: str) -> bool:
+    """Validate that host is a valid IP address or hostname."""
+    if not host or not isinstance(host, str):
+        return False
+    host = host.strip()
+    return bool(IP_REGEX.match(host) or HOSTNAME_REGEX.match(host))
+
 DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
@@ -45,8 +64,12 @@ async def validate_input(hass: core.HomeAssistant, data):
     Data has the keys from DATA_SCHEMA with values provided by the user.
     """
     
-    # First check if PVS supports LocalAPI
+    # Validate host format
     host = data[SUNPOWER_HOST]
+    if not validate_host(host):
+        raise InvalidHost("Invalid IP address or hostname format")
+    
+    # Check if PVS supports LocalAPI
     support_check = await hass.async_add_executor_job(
         SunPowerMonitor.check_localapi_support, host
     )
@@ -95,7 +118,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, any] | None = None):
         """Handle the initial step."""
         errors = {}
-        _LOGGER.debug(f"User Setup input {user_input}")
+        if user_input:
+            _LOGGER.debug(f"User Setup: host={user_input.get(CONF_HOST)}")
+        else:
+            _LOGGER.debug("User Setup: initial form display")
         if user_input is not None:
             try:
                 info = await validate_input(self.hass, user_input)
@@ -103,6 +129,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=info["title"], data=user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
+            except InvalidHost:
+                errors["base"] = "invalid_host"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -130,7 +158,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         user_input: dict[str, any] | None = None,
     ) -> config_entries.FlowResult:
         """Manage the options."""
-        _LOGGER.debug(f"Options input {user_input} {self.config_entry}")
+        if user_input:
+            _LOGGER.debug(f"Options input: intervals={user_input.get(SUNPOWER_UPDATE_INTERVAL)}/{user_input.get(SUNVAULT_UPDATE_INTERVAL)}")
+        else:
+            _LOGGER.debug("Options: initial form display")
         options = dict(self.config_entry.options)
 
         errors = {}
@@ -172,3 +203,7 @@ class CannotConnect(exceptions.HomeAssistantError):
 
 class InvalidAuth(exceptions.HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+
+class InvalidHost(exceptions.HomeAssistantError):
+    """Error to indicate invalid host format."""

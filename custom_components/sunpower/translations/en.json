@@ -5,6 +5,7 @@
         },
         "error": {
             "cannot_connect": "Cannot Connect",
+            "invalid_host": "Invalid IP address or hostname format",
             "unknown": "Unknown Error"
         },
         "step": {
