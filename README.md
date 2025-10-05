@@ -23,10 +23,11 @@ This fork adds **automatic LocalAPI support** for newer PVS firmware (build >= 6
 5. No configuration changes needed - it just works!
 
 ### Benefits
-- Faster response times with caching
+- Faster response times with caching (caches variable paths, not values - data is always fresh)
 - More reliable session management
 - Better error handling and retry logic
 - Reduced load on PVS system
+- Cache resets on Home Assistant restart to ensure optimal performance
 
 ### LocalAPI Documentation
 For technical details on the LocalAPI implementation, see:
