@@ -309,6 +309,8 @@ The integration automatically detects and uses the appropriate API based on firm
 - Older firmware: Uses legacy CGI endpoints automatically
 - No configuration needed - the integration handles this transparently
 
+**Note on Firmware Upgrades:** API detection occurs when Home Assistant starts or when the integration reloads. If SunPower remotely upgrades your PVS firmware while Home Assistant is running, the integration will continue using the current API until you restart Home Assistant. After restart, it will automatically detect the new firmware and switch to LocalAPI if supported.
+
 ### Missing solar production. Appears that the Sunpower meter has disappeared from the device list
 
 Run the debugging command and look for the METER entries.
