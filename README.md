@@ -21,7 +21,8 @@ This fork adds automatic LocalAPI support for newer PVS firmware (build >= 61840
 2. If firmware build >= 61840: Uses LocalAPI with session-based authentication
 3. If older firmware: Uses legacy CGI endpoints (same as before)
 4. Serial suffix (last 5 characters of PVS serial) is auto-fetched when possible
-5. No configuration changes needed - it just works!
+5. Field name mapping: LocalAPI returns camelCase field names (e.g., `pMppt1Kw`), which are automatically converted to snake_case (e.g., `p_mppt1_kw`) to match legacy CGI format, ensuring identical data structures for backwards compatibility
+6. No configuration changes needed - it just works!
 
 ### Benefits
 - Faster response times with caching (caches variable paths, not values - data is always fresh)

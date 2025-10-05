@@ -420,6 +420,11 @@ class SunPowerMonitor:
                 "DESCR": "Inverter {0}".format(inv.get('sn', '')),
                 "STATE": "working",
             }
+            # Field name mapping: LocalAPI uses camelCase (e.g., ltea3phsumKwh),
+            # but we convert to snake_case (e.g., ltea_3phsum_kwh) to match
+            # legacy CGI format. This ensures identical data structures for
+            # backwards compatibility with all downstream code (sensors, entities).
+            
             # Energy
             dev["ltea_3phsum_kwh"] = inv.get("ltea3phsumKwh")
             
