@@ -39,7 +39,7 @@ class SunPowerMonitor:
         - serial_suffix: last 5 characters of the PVS serial (password for ssm_owner, only needed for LocalAPI)
         """
         self.host = host
-        self.base = f"http://{host}"
+        self.base = "http://{0}".format(host)
         self.session = requests.Session()
         self.timeout = 30
         self.use_localapi = False
@@ -73,7 +73,7 @@ class SunPowerMonitor:
         else:
             # Use legacy CGI for older firmware
             self.use_localapi = False
-            self.command_url = f"http://{host}/cgi-bin/dl_cgi?Command="
+            self.command_url = "http://{0}/cgi-bin/dl_cgi?Command=".format(host)
     
     def _fetch_serial_suffix(self) -> str:
         """Attempt to fetch serial number from supervisor/info endpoint.
@@ -82,7 +82,7 @@ class SunPowerMonitor:
         """
         try:
             resp = self.session.get(
-                f"{self.base}/cgi-bin/dl_cgi/supervisor/info",
+                "{0}/cgi-bin/dl_cgi/supervisor/info".format(self.base),
                 timeout=self.timeout
             )
             if resp.status_code == 200:
@@ -116,12 +116,12 @@ class SunPowerMonitor:
         
         try:
             resp = requests.get(
-                f"http://{host}/cgi-bin/dl_cgi/supervisor/info",
+                "http://{0}/cgi-bin/dl_cgi/supervisor/info".format(host),
                 timeout=timeout
             )
             
             if resp.status_code != 200:
-                result["error"] = f"HTTP {resp.status_code}"
+                result["error"] = "HTTP {0}".format(resp.status_code)
                 return result
             
             data = resp.json()
@@ -142,15 +142,15 @@ class SunPowerMonitor:
             if build and build >= SunPowerMonitor.MIN_LOCALAPI_BUILD:
                 result["supported"] = True
             else:
-                result["error"] = f"Firmware build {build} is too old. LocalAPI requires build {SunPowerMonitor.MIN_LOCALAPI_BUILD}+"
+                result["error"] = "Firmware build {0} is too old. LocalAPI requires build {1}+".format(build, SunPowerMonitor.MIN_LOCALAPI_BUILD)
             
             return result
             
         except requests.exceptions.RequestException as e:
-            result["error"] = f"Connection failed: {e}"
+            result["error"] = "Connection failed: {0}".format(e)
             return result
         except Exception as e:
-            result["error"] = f"Unexpected error: {e}"
+            result["error"] = "Unexpected error: {0}".format(e)
             return result
 
     def _login(self):
@@ -158,12 +158,12 @@ class SunPowerMonitor:
         import base64
         
         # Build Basic auth header (lowercase "basic")
-        token = base64.b64encode(f"ssm_owner:{self.serial_suffix}".encode("utf-8")).decode("ascii")
-        auth_header = f"basic {token}"
+        token = base64.b64encode("ssm_owner:{0}".format(self.serial_suffix).encode("utf-8")).decode("ascii")
+        auth_header = "basic {0}".format(token)
         
         try:
             resp = self.session.get(
-                f"{self.base}/auth?login",
+                "{0}/auth?login".format(self.base),
                 headers={"Authorization": auth_header},
                 timeout=self.timeout
             )
@@ -176,13 +176,13 @@ class SunPowerMonitor:
                 raise ParseException("Authentication failed: no session token received")
             
             # Store session token in session headers for all future requests
-            self.session.headers.update({"Cookie": f"session={session_token}"})
+            self.session.headers.update({"Cookie": "session={0}".format(session_token)})
             self._session_token = session_token
             
         except requests.exceptions.HTTPError as error:
             if error.response.status_code == 401:
                 raise ConnectionException("Authentication failed: invalid credentials")
-            raise ConnectionException(f"Authentication failed: HTTP {error.response.status_code}")
+            raise ConnectionException("Authentication failed: HTTP {0}".format(error.response.status_code))
         except requests.exceptions.RequestException as error:
             raise ConnectionException("Authentication failed: network error")
         except simplejson.errors.JSONDecodeError as error:
@@ -210,7 +210,7 @@ class SunPowerMonitor:
         max_retries = 2
         
         try:
-            resp = self.session.get(f"{self.base}/vars", params=params, timeout=self.timeout)
+            resp = self.session.get("{0}/vars".format(self.base), params=params, timeout=self.timeout)
             
             # Handle session expiration
             if resp.status_code == 401 or resp.status_code == 403:
@@ -255,7 +255,7 @@ class SunPowerMonitor:
                     meter_idx = parts[4]  # e.g., "0", "1"
                     field = parts[5] if len(parts) > 5 else None
                     if field:
-                        meter_key = f"/sys/devices/meter/{meter_idx}"
+                        meter_key = "/sys/devices/meter/{0}".format(meter_idx)
                         if meter_key not in meters:
                             meters[meter_key] = {}
                         meters[meter_key][field] = value
@@ -281,7 +281,7 @@ class SunPowerMonitor:
                     inv_idx = parts[4]
                     field = parts[5] if len(parts) > 5 else None
                     if field:
-                        inv_key = f"/sys/devices/inverter/{inv_idx}"
+                        inv_key = "/sys/devices/inverter/{0}".format(inv_idx)
                         if inv_key not in inverters:
                             inverters[inv_key] = {}
                         inverters[inv_key][field] = value
@@ -337,7 +337,7 @@ class SunPowerMonitor:
             # PVS device (minimal info)
             sysinfo = self._fetch_sysinfo(use_cache=use_cache)
             # Use actual serial number from PVS, not IP address
-            pvs_serial = sysinfo.get("/sys/info/serialnum", f"PVS-{self.host}")
+            pvs_serial = sysinfo.get("/sys/info/serialnum", "PVS-{0}".format(self.host))
             pvs_model = sysinfo.get("/sys/info/model", "PVS")
             pvs_sw_version = sysinfo.get("/sys/info/sw_rev", "Unknown")
             devices.append(
@@ -346,7 +346,7 @@ class SunPowerMonitor:
                     "SERIAL": pvs_serial,
                     "MODEL": pvs_model,
                     "TYPE": "PVS",
-                    "DESCR": f"{pvs_model} {pvs_serial}",
+                    "DESCR": "{0} {1}".format(pvs_model, pvs_serial),
                     "STATE": "working",
                     "sw_ver": pvs_sw_version,
                     # Legacy dl_* diagnostics unavailable via this minimal sysinfo; omit
@@ -355,14 +355,14 @@ class SunPowerMonitor:
         except Exception as e:
             # If sysinfo fails, log but continue with other devices
             import logging
-            logging.getLogger(__name__).warning(f"Failed to fetch PVS info: {e}")
+            logging.getLogger(__name__).warning("Failed to fetch PVS info: {0}".format(e))
 
         # Meter devices - with error handling
         try:
             meters = self._fetch_meters(use_cache=use_cache)
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning(f"Failed to fetch meters: {e}")
+            logging.getLogger(__name__).warning("Failed to fetch meters: {0}".format(e))
             meters = {}
         
         for path, m in meters.items():
@@ -371,7 +371,7 @@ class SunPowerMonitor:
                 "SERIAL": m.get("sn", "Unknown"),
                 "MODEL": m.get("prodMdlNm", "Unknown"),
                 "TYPE": "PVS-METER",
-                "DESCR": f"Power Meter {m.get('sn', '')}",
+                "DESCR": "Power Meter {0}".format(m.get('sn', '')),
                 "STATE": "working",
             }
             # Field mappings
@@ -408,7 +408,7 @@ class SunPowerMonitor:
             inverters = self._fetch_inverters(use_cache=use_cache)
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning(f"Failed to fetch inverters: {e}")
+            logging.getLogger(__name__).warning("Failed to fetch inverters: {0}".format(e))
             inverters = {}
         
         for path, inv in inverters.items():
@@ -417,7 +417,7 @@ class SunPowerMonitor:
                 "SERIAL": inv.get("sn", "Unknown"),
                 "MODEL": inv.get("prodMdlNm", "Unknown"),
                 "TYPE": "MICRO-INVERTER",
-                "DESCR": f"Inverter {inv.get('sn', '')}",
+                "DESCR": "Inverter {0}".format(inv.get('sn', '')),
                 "STATE": "working",
             }
             # Energy
@@ -462,7 +462,7 @@ class SunPowerMonitor:
             # Use legacy CGI endpoint for older firmware
             try:
                 return requests.get(
-                    f"http://{self.host}/cgi-bin/dl_cgi/energy-storage-system/status",
+                    "http://{0}/cgi-bin/dl_cgi/energy-storage-system/status".format(self.host),
                     timeout=120,
                 ).json()
             except requests.exceptions.RequestException as error:
