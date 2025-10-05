@@ -13,8 +13,7 @@ This fork adds **automatic LocalAPI support** for newer PVS firmware (build >= 6
 - LocalAPI for Newer Firmware: Uses the more efficient Varserver FCGI endpoints with authentication
 - Legacy CGI Fallback: Maintains support for older firmware using traditional CGI endpoints
 - Improved Performance: Caching mechanism reduces API calls and improves response times
-- Enhanced Validation: IP address and hostname format validation during setup
-- Better Logging: Clear indication of which API type is being used
+- Automatic Credential Management: Serial suffix auto-fetched from PVS, no manual configuration needed
 
 ### How It Works
 1. During setup, the integration queries `/cgi-bin/dl_cgi/supervisor/info` to check firmware version
@@ -295,16 +294,14 @@ If you have newer firmware (build >= 61840) and see authentication errors:
 
 2. Verify serial suffix: The integration automatically fetches the serial suffix (last 5 characters of PVS serial) from the PVS during initialization. If auto-fetch fails, the integration will raise an error. The serial suffix is used as the password for LocalAPI authentication.
 
-3. Check logs: Look for messages like "PVS at [IP] supports LocalAPI" or "PVS at [IP] using legacy CGI endpoints" to confirm which API is being used.
-
-4. Force legacy mode: If LocalAPI causes issues, you can temporarily work around it by modifying the firmware build check (not recommended for production).
+3. Check logs: Look in Home Assistant logs for connection errors or authentication failures during integration setup.
 
 ### API Type Detection
 
-To see which API your system is using:
-1. Check Home Assistant logs during integration setup
-2. Look for log entries mentioning "LocalAPI" or "Legacy CGI"
-3. The integration title will show the firmware version and API type (e.g., "PVS 2024.5.61840 (LocalAPI)")
+The integration automatically detects and uses the appropriate API based on firmware version:
+- Firmware build >= 61840: Uses LocalAPI automatically
+- Older firmware: Uses legacy CGI endpoints automatically
+- No configuration needed - the integration handles this transparently
 
 ### Missing solar production. Appears that the Sunpower meter has disappeared from the device list
 
