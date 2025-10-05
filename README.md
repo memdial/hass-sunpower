@@ -11,6 +11,7 @@ This fork adds automatic LocalAPI support for newer PVS firmware (build >= 61840
 ### Key Enhancements
 - Automatic API Detection: Queries firmware version and automatically selects the appropriate API
 - LocalAPI for Newer Firmware: Uses the more efficient Varserver FCGI endpoints with authentication
+- Direct LAN Access: LocalAPI works via the standard LAN IP - no proxy or special network setup required
 - Legacy CGI Fallback: Maintains support for older firmware using traditional CGI endpoints
 - Improved Performance: Caching mechanism reduces API calls and improves response times
 - Automatic Credential Management: Serial suffix auto-fetched from PVS, no manual configuration needed
