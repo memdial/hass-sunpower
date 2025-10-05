@@ -28,6 +28,11 @@ This fork adds **automatic LocalAPI support** for newer PVS firmware (build >= 6
 - Better error handling and retry logic
 - Reduced load on PVS system
 
+### LocalAPI Documentation
+For technical details on the LocalAPI implementation, see:
+- [LocalAPI Documentation](https://github.com/SunStrong-Management/pypvs/blob/main/doc/LocalAPI.md) - Comprehensive guide to Varserver FCGI endpoints
+- [pypvs Project](https://github.com/SunStrong-Management/pypvs) - Python library for PVS LocalAPI access
+
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
