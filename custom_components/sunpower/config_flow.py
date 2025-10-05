@@ -69,28 +69,33 @@ async def validate_input(hass: core.HomeAssistant, data):
     if not validate_host(host):
         raise InvalidHost("Invalid IP address or hostname format")
     
-    # Check if PVS supports LocalAPI
+    # Check firmware version (for informational purposes)
     support_check = await hass.async_add_executor_job(
         SunPowerMonitor.check_localapi_support, host
     )
     
-    if not support_check["supported"]:
-        error_msg = support_check.get("error", "Unknown error")
-        _LOGGER.error(f"LocalAPI not supported on {host}: {error_msg}")
-        raise CannotConnect(f"LocalAPI not supported: {error_msg}")
+    if support_check["supported"]:
+        _LOGGER.info(
+            f"PVS at {host} supports LocalAPI: "
+            f"Build {support_check['build']}, Version {support_check['version']}"
+        )
+        api_type = "LocalAPI"
+    else:
+        _LOGGER.info(
+            f"PVS at {host} using legacy CGI endpoints: "
+            f"Build {support_check.get('build', 'unknown')}"
+        )
+        api_type = "Legacy CGI"
     
-    _LOGGER.info(
-        f"PVS at {host} supports LocalAPI: "
-        f"Build {support_check['build']}, Version {support_check['version']}"
-    )
-    
-    # Let SunPowerMonitor auto-fetch serial suffix (no UI field)
     # Create monitor in executor since __init__ makes blocking calls
+    # SunPowerMonitor will automatically use the appropriate API
     try:
         spm = await hass.async_add_executor_job(
             SunPowerMonitor, host, None
         )
-        name = f"PVS {support_check.get('version', host)}"
+        
+        version = support_check.get('version', host)
+        name = f"PVS {version} ({api_type})"
         
         # Test connection by fetching system info
         response = await hass.async_add_executor_job(spm.network_status)

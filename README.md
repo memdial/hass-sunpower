@@ -4,7 +4,30 @@ Home Assistant SunPower Integration using the local installer ethernet interface
 
 Original Integration is [https://github.com/krbaker/hass-sunpower](https://github.com/krbaker/hass-sunpower)
 
-* If this is a fork, please add what's different here and fix up the badges below
+## 🆕 What's Different in This Fork
+
+This fork adds **automatic LocalAPI support** for newer PVS firmware (build >= 61840) while maintaining full backwards compatibility with legacy CGI endpoints.
+
+### Key Enhancements
+- Automatic API Detection: Queries firmware version and automatically selects the appropriate API
+- LocalAPI for Newer Firmware: Uses the more efficient Varserver FCGI endpoints with authentication
+- Legacy CGI Fallback: Maintains support for older firmware using traditional CGI endpoints
+- Improved Performance: Caching mechanism reduces API calls and improves response times
+- Enhanced Validation: IP address and hostname format validation during setup
+- Better Logging: Clear indication of which API type is being used
+
+### How It Works
+1. During setup, the integration queries `/cgi-bin/dl_cgi/supervisor/info` to check firmware version
+2. If firmware build >= 61840: Uses LocalAPI with session-based authentication
+3. If older firmware: Uses legacy CGI endpoints (same as before)
+4. Serial suffix (last 5 characters of PVS serial) is auto-fetched when possible
+5. No configuration changes needed - it just works!
+
+### Benefits
+- Faster response times with caching
+- More reliable session management
+- Better error handling and retry logic
+- Reduced load on PVS system
 
 [![GitHub Release][releases-shield]][releases]
 [![GitHub Activity][commits-shield]][commits]
@@ -259,6 +282,29 @@ Power Output.
 
 If you file a bug one of the most useful things to include is the output of
 > curl <http://172.27.153.1/cgi-bin/dl_cgi?Command=DeviceList>
+
+### LocalAPI Authentication Issues
+
+If you have newer firmware (build >= 61840) and see authentication errors:
+
+1. Check firmware version: 
+   ```bash
+   curl http://172.27.153.1/cgi-bin/dl_cgi/supervisor/info
+   ```
+   Look for the `BUILD` number in the response.
+
+2. Verify serial suffix: The integration automatically fetches the serial suffix (last 5 characters of PVS serial) from the PVS during initialization. If auto-fetch fails, the integration will raise an error. The serial suffix is used as the password for LocalAPI authentication.
+
+3. Check logs: Look for messages like "PVS at [IP] supports LocalAPI" or "PVS at [IP] using legacy CGI endpoints" to confirm which API is being used.
+
+4. Force legacy mode: If LocalAPI causes issues, you can temporarily work around it by modifying the firmware build check (not recommended for production).
+
+### API Type Detection
+
+To see which API your system is using:
+1. Check Home Assistant logs during integration setup
+2. Look for log entries mentioning "LocalAPI" or "Legacy CGI"
+3. The integration title will show the firmware version and API type (e.g., "PVS 2024.5.61840 (LocalAPI)")
 
 ### Missing solar production. Appears that the Sunpower meter has disappeared from the device list
 

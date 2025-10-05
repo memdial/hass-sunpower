@@ -1,6 +1,5 @@
-"""SunPower PVS LocalAPI client and adapter to legacy schema."""
+"""SunPower PVS client with automatic LocalAPI/Legacy CGI fallback."""
 
-import os
 import requests
 import simplejson
 from urllib.parse import urlencode
@@ -23,44 +22,58 @@ class ParseException(Exception):
 
 
 class SunPowerMonitor:
-    """Client for SunPower PVS LocalAPI (Varserver FCGI), adapted to legacy schema."""
-
-    # Optional hardcoded serial suffix fallback. Set this to your last 5 chars if you prefer to hardcode.
-    # This value is only used if no serial suffix is supplied via constructor or environment variable.
-    # WARNING: Do not commit actual credentials to version control!
-    HARDCODED_SERIAL_SUFFIX = ""
+    """Client for SunPower PVS with automatic LocalAPI/Legacy CGI fallback.
+    
+    Automatically detects firmware version and uses:
+    - LocalAPI (Varserver FCGI) for firmware build >= 61840
+    - Legacy CGI endpoints for older firmware
+    """
     
     # Minimum firmware build number that supports LocalAPI
     MIN_LOCALAPI_BUILD = 61840
 
     def __init__(self, host, serial_suffix: str | None = None):
-        """Initialize LocalAPI client.
+        """Initialize PVS client with automatic API detection.
 
         - host: IP or hostname of the PVS
-        - serial_suffix: last 5 characters of the PVS serial (password for ssm_owner)
+        - serial_suffix: last 5 characters of the PVS serial (password for ssm_owner, only needed for LocalAPI)
         """
         self.host = host
         self.base = f"http://{host}"
         self.session = requests.Session()
         self.timeout = 30
-        
-        # Try to auto-fetch serial suffix from supervisor/info if not provided
-        if not serial_suffix or not serial_suffix.strip():
-            serial_suffix = self._fetch_serial_suffix()
-        
-        # Resolve serial suffix: provided -> auto-fetched -> env var -> hardcoded
-        env_suffix = os.environ.get("SUNPOWER_SERIAL_SUFFIX", "").strip()
-        hardcoded = self.HARDCODED_SERIAL_SUFFIX.strip() if self.HARDCODED_SERIAL_SUFFIX else ""
-        resolved = (serial_suffix or "").strip() or env_suffix or hardcoded
-        
-        if not resolved:
-            raise ConnectionException(
-                "Missing serial suffix. Auto-detection failed. Please set SUNPOWER_SERIAL_SUFFIX environment variable.",
-            )
-        
-        self.serial_suffix = resolved
+        self.use_localapi = False
         self._session_token = None
-        self._login()
+        self._cache_initialized = False
+        self._last_fetch_time = 0
+        self._min_fetch_interval = 1.0  # Minimum 1 second between fetches
+        
+        # Check firmware version to determine which API to use
+        support_check = self.check_localapi_support(host, self.timeout)
+        
+        if support_check["supported"]:
+            # Use LocalAPI for newer firmware
+            self.use_localapi = True
+            
+            # Try to auto-fetch serial suffix from supervisor/info if not provided
+            if not serial_suffix or not serial_suffix.strip():
+                serial_suffix = self._fetch_serial_suffix()
+            
+            # Use the serial suffix (auto-fetched or provided)
+            resolved = (serial_suffix or "").strip()
+            
+            if not resolved:
+                raise ConnectionException(
+                    "Missing serial suffix for LocalAPI. Auto-detection failed. "
+                    "Unable to retrieve serial number from PVS."
+                )
+            
+            self.serial_suffix = resolved
+            self._login()
+        else:
+            # Use legacy CGI for older firmware
+            self.use_localapi = False
+            self.command_url = f"http://{host}/cgi-bin/dl_cgi?Command="
     
     def _fetch_serial_suffix(self) -> str:
         """Attempt to fetch serial number from supervisor/info endpoint.
@@ -175,13 +188,14 @@ class SunPowerMonitor:
         except simplejson.errors.JSONDecodeError as error:
             raise ParseException("Authentication failed: invalid response format")
 
-    def _vars(self, *, names=None, match=None, cache=None, fmt_obj=True):
-        """Query /vars endpoint.
+    def _vars(self, *, names=None, match=None, cache=None, fmt_obj=True, retry_count=0):
+        """Query /vars endpoint with retry logic.
 
         names: list of exact variable names
         match: substring match
         cache: cache id to create or query
         fmt_obj: if True, request fmt=obj to get object mapping
+        retry_count: internal retry counter
         """
         params = {}
         if names:
@@ -193,26 +207,45 @@ class SunPowerMonitor:
         if fmt_obj:
             params["fmt"] = "obj"
         
+        max_retries = 2
+        
         try:
             resp = self.session.get(f"{self.base}/vars", params=params, timeout=self.timeout)
             
             # Handle session expiration
             if resp.status_code == 401 or resp.status_code == 403:
-                # Re-authenticate and retry
-                self._login()
-                resp = self.session.get(f"{self.base}/vars", params=params, timeout=self.timeout)
+                if retry_count < max_retries:
+                    # Re-authenticate and retry
+                    self._login()
+                    return self._vars(names=names, match=match, cache=cache, fmt_obj=fmt_obj, retry_count=retry_count + 1)
+                else:
+                    raise ConnectionException("Authentication failed after retries")
             
             resp.raise_for_status()
             data = resp.json()
             return data
+        except requests.exceptions.Timeout as error:
+            if retry_count < max_retries:
+                # Retry on timeout
+                return self._vars(names=names, match=match, cache=cache, fmt_obj=fmt_obj, retry_count=retry_count + 1)
+            raise ConnectionException("Request timeout after retries")
         except requests.exceptions.RequestException as error:
             raise ConnectionException("Failed to query device variables")
         except (simplejson.errors.JSONDecodeError, ValueError) as error:
             raise ParseException("Failed to parse device response")
 
-    def _fetch_meters(self):
-        # Fetch all meter variables and group by device index
-        data = self._vars(match="meter", cache="mdata", fmt_obj=True)
+    def _fetch_meters(self, use_cache=True):
+        """Fetch all meter variables and group by device index.
+        
+        use_cache: if True and cache exists, use cached data; if False, refresh cache
+        """
+        # On first call or when not using cache, create/refresh the cache with match parameter
+        # On subsequent calls, use the cache without match for faster response
+        if use_cache and self._cache_initialized:
+            data = self._vars(cache="mdata", fmt_obj=True)
+        else:
+            data = self._vars(match="meter", cache="mdata", fmt_obj=True)
+        
         # Group by meter index (e.g., /sys/devices/meter/0/field -> meter 0)
         meters = {}
         for var_path, value in data.items():
@@ -228,9 +261,18 @@ class SunPowerMonitor:
                         meters[meter_key][field] = value
         return meters
 
-    def _fetch_inverters(self):
-        # Fetch all inverter variables and group by device index
-        data = self._vars(match="inverter", cache="idata", fmt_obj=True)
+    def _fetch_inverters(self, use_cache=True):
+        """Fetch all inverter variables and group by device index.
+        
+        use_cache: if True and cache exists, use cached data; if False, refresh cache
+        """
+        # On first call or when not using cache, create/refresh the cache with match parameter
+        # On subsequent calls, use the cache without match for faster response
+        if use_cache and self._cache_initialized:
+            data = self._vars(cache="idata", fmt_obj=True)
+        else:
+            data = self._vars(match="inverter", cache="idata", fmt_obj=True)
+        
         inverters = {}
         for var_path, value in data.items():
             if "/sys/devices/inverter/" in var_path:
@@ -245,9 +287,16 @@ class SunPowerMonitor:
                         inverters[inv_key][field] = value
         return inverters
 
-    def _fetch_sysinfo(self):
-        # Use match instead of name query
-        data = self._vars(match="info", cache="sysinfo", fmt_obj=True)
+    def _fetch_sysinfo(self, use_cache=True):
+        """Fetch system info variables.
+        
+        use_cache: if True and cache exists, use cached data; if False, refresh cache
+        """
+        # System info changes rarely, so cache is very beneficial
+        if use_cache and self._cache_initialized:
+            data = self._vars(cache="sysinfo", fmt_obj=True)
+        else:
+            data = self._vars(match="info", cache="sysinfo", fmt_obj=True)
         return data
 
     @staticmethod
@@ -256,34 +305,66 @@ class SunPowerMonitor:
             val = obj[old_key]
             obj[new_key] = transform(val) if transform else val
 
+    def _legacy_generic_command(self, command):
+        """Legacy CGI command for older firmware.
+        
+        All 'commands' to the PVS module use this url pattern and return json.
+        The PVS system can take a very long time to respond so timeout is at 2 minutes.
+        """
+        try:
+            return requests.get(self.command_url + command, timeout=120).json()
+        except requests.exceptions.RequestException as error:
+            raise ConnectionException("Failed to execute legacy command")
+        except simplejson.errors.JSONDecodeError as error:
+            raise ParseException("Failed to parse legacy response")
+
     def device_list(self):
-        """Return legacy-like DeviceList using LocalAPI vars.
+        """Return DeviceList using LocalAPI (new) or legacy CGI (old).
 
         Structure: {"devices": [ {DEVICE_TYPE, SERIAL, MODEL, TYPE, DESCR, STATE, ...fields} ]}
         """
+        if not self.use_localapi:
+            # Use legacy CGI endpoint for older firmware
+            return self._legacy_generic_command("DeviceList")
+        
+        # Use LocalAPI for newer firmware
         devices = []
+        
+        # Determine if we should use cached data (after first successful fetch)
+        use_cache = self._cache_initialized
+        
+        try:
+            # PVS device (minimal info)
+            sysinfo = self._fetch_sysinfo(use_cache=use_cache)
+            # Use actual serial number from PVS, not IP address
+            pvs_serial = sysinfo.get("/sys/info/serialnum", f"PVS-{self.host}")
+            pvs_model = sysinfo.get("/sys/info/model", "PVS")
+            pvs_sw_version = sysinfo.get("/sys/info/sw_rev", "Unknown")
+            devices.append(
+                {
+                    "DEVICE_TYPE": "PVS",
+                    "SERIAL": pvs_serial,
+                    "MODEL": pvs_model,
+                    "TYPE": "PVS",
+                    "DESCR": f"{pvs_model} {pvs_serial}",
+                    "STATE": "working",
+                    "sw_ver": pvs_sw_version,
+                    # Legacy dl_* diagnostics unavailable via this minimal sysinfo; omit
+                }
+            )
+        except Exception as e:
+            # If sysinfo fails, log but continue with other devices
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to fetch PVS info: {e}")
 
-        # PVS device (minimal info)
-        sysinfo = self._fetch_sysinfo()
-        # Use actual serial number from PVS, not IP address
-        pvs_serial = sysinfo.get("/sys/info/serialnum", f"PVS-{self.host}")
-        pvs_model = sysinfo.get("/sys/info/model", "PVS")
-        pvs_sw_version = sysinfo.get("/sys/info/sw_rev", "Unknown")
-        devices.append(
-            {
-                "DEVICE_TYPE": "PVS",
-                "SERIAL": pvs_serial,
-                "MODEL": pvs_model,
-                "TYPE": "PVS",
-                "DESCR": f"{pvs_model} {pvs_serial}",
-                "STATE": "working",
-                "sw_ver": pvs_sw_version,
-                # Legacy dl_* diagnostics unavailable via this minimal sysinfo; omit
-            }
-        )
-
-        # Meter devices
-        meters = self._fetch_meters()
+        # Meter devices - with error handling
+        try:
+            meters = self._fetch_meters(use_cache=use_cache)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to fetch meters: {e}")
+            meters = {}
+        
         for path, m in meters.items():
             dev = {
                 "DEVICE_TYPE": "Power Meter",
@@ -322,8 +403,14 @@ class SunPowerMonitor:
             
             devices.append(dev)
 
-        # Inverter devices
-        inverters = self._fetch_inverters()
+        # Inverter devices - with error handling
+        try:
+            inverters = self._fetch_inverters(use_cache=use_cache)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Failed to fetch inverters: {e}")
+            inverters = {}
+        
         for path, inv in inverters.items():
             dev = {
                 "DEVICE_TYPE": "Inverter",
@@ -333,27 +420,57 @@ class SunPowerMonitor:
                 "DESCR": f"Inverter {inv.get('sn', '')}",
                 "STATE": "working",
             }
+            # Energy
             dev["ltea_3phsum_kwh"] = inv.get("ltea3phsumKwh")
-            dev["p_mppt1_kw"] = inv.get("pMppt1Kw")
-            dev["vln_3phavg_v"] = inv.get("vln3phavgV")
-            dev["i_3phsum_a"] = inv.get("iMppt1A")  # best available analogue
-            dev["v_mppt1_v"] = inv.get("vMppt1V")
+            
+            # Power - AC and DC
+            dev["p_3phsum_kw"] = inv.get("p3phsumKw")  # AC power (more accurate)
+            dev["p_mppt1_kw"] = inv.get("pMppt1Kw")    # DC power
+            
+            # Voltage - AC and DC
+            dev["vln_3phavg_v"] = inv.get("vln3phavgV")  # AC voltage
+            dev["v_mppt1_v"] = inv.get("vMppt1V")        # DC voltage
+            
+            # Current - AC and DC
+            dev["i_3phsum_a"] = inv.get("i3phsumA")   # AC current (actual output)
+            dev["i_mppt1_a"] = inv.get("iMppt1A")     # DC current
+            
+            # Temperature and frequency
             dev["t_htsnk_degc"] = inv.get("tHtsnkDegc")
             dev["freq_hz"] = inv.get("freqHz")
+            
             # Optional MPPT sum if present
             if "pMpptsumKw" in inv:
                 dev["p_mpptsum_kw"] = inv.get("pMpptsumKw")
+            
             devices.append(dev)
+        
+        # Mark cache as initialized after first successful fetch
+        if not self._cache_initialized and (meters or inverters):
+            self._cache_initialized = True
 
         return {"devices": devices}
 
     def energy_storage_system_status(self):
-        """Return minimal ESS-like structure using livedata if available.
+        """Return ESS status using LocalAPI (new) or legacy CGI (old).
 
         Structure expected by callers:
         { "ess_report": { "battery_status": [...], "ess_status": [...], "hub_plus_status": {...} } }
         If detailed vars are not available, return empty lists/dicts and let callers handle gracefully.
         """
+        if not self.use_localapi:
+            # Use legacy CGI endpoint for older firmware
+            try:
+                return requests.get(
+                    f"http://{self.host}/cgi-bin/dl_cgi/energy-storage-system/status",
+                    timeout=120,
+                ).json()
+            except requests.exceptions.RequestException as error:
+                raise ConnectionException("Failed to get ESS status")
+            except simplejson.errors.JSONDecodeError as error:
+                raise ParseException("Failed to parse ESS response")
+        
+        # Use LocalAPI for newer firmware
         try:
             livedata = self._vars(match="livedata", cache="ldata", fmt_obj=True)
         except Exception:
@@ -396,6 +513,11 @@ class SunPowerMonitor:
         return {"ess_report": report}
 
     def network_status(self):
-        """Return minimal network/system info via LocalAPI for config validation."""
+        """Return network/system info using LocalAPI (new) or legacy CGI (old)."""
+        if not self.use_localapi:
+            # Use legacy CGI endpoint for older firmware
+            return self._legacy_generic_command("Get_Comm")
+        
+        # Use LocalAPI for newer firmware
         info = self._fetch_sysinfo()
         return info
