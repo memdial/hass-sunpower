@@ -2,8 +2,6 @@
 
 import logging
 
-import re
-
 import voluptuous as vol
 from homeassistant import (
     config_entries,
@@ -31,23 +29,6 @@ from .sunpower import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Regex for validating IP addresses and hostnames
-IP_REGEX = re.compile(
-    r'^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}'
-    r'(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-)
-HOSTNAME_REGEX = re.compile(
-    r'^(?=.{1,253}$)(?!-)[A-Za-z0-9-]{1,63}(?<!-)'
-    r'(?:\.(?!-)[A-Za-z0-9-]{1,63}(?<!-))*$'
-)
-
-def validate_host(host: str) -> bool:
-    """Validate that host is a valid IP address or hostname."""
-    if not host or not isinstance(host, str):
-        return False
-    host = host.strip()
-    return bool(IP_REGEX.match(host) or HOSTNAME_REGEX.match(host))
-
 DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
@@ -62,47 +43,16 @@ async def validate_input(hass: core.HomeAssistant, data):
 
     Data has the keys from DATA_SCHEMA with values provided by the user.
     """
-    
-    # Validate host format
-    host = data[SUNPOWER_HOST]
-    if not validate_host(host):
-        raise InvalidHost("Invalid IP address or hostname format")
-    
-    # Check firmware version (for informational purposes)
-    support_check = await hass.async_add_executor_job(
-        SunPowerMonitor.check_localapi_support, host
-    )
-    
-    if support_check["supported"]:
-        _LOGGER.info(
-            f"PVS at {host} supports LocalAPI: "
-            f"Build {support_check['build']}, Version {support_check['version']}"
-        )
-        api_type = "LocalAPI"
-    else:
-        _LOGGER.info(
-            f"PVS at {host} using legacy CGI endpoints: "
-            f"Build {support_check.get('build', 'unknown')}"
-        )
-        api_type = "Legacy CGI"
-    
-    # Create monitor in executor since __init__ makes blocking calls
-    # SunPowerMonitor will automatically use the appropriate API
+
+    spm = SunPowerMonitor(data[SUNPOWER_HOST])
+    name = "PVS {}".format(data[SUNPOWER_HOST])
     try:
-        spm = await hass.async_add_executor_job(
-            SunPowerMonitor, host, None
-        )
-        
-        version = support_check.get('version', host)
-        name = f"PVS {version} ({api_type})"
-        
-        # Test connection by fetching system info
         response = await hass.async_add_executor_job(spm.network_status)
-        _LOGGER.debug("Got from %s %s", host, response)
-        
-        return {"title": name}
+        _LOGGER.debug("Got from %s %s", data[SUNPOWER_HOST], response)
     except ConnectionException as error:
         raise CannotConnect from error
+
+    return {"title": name}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -207,7 +157,3 @@ class CannotConnect(exceptions.HomeAssistantError):
 
 class InvalidAuth(exceptions.HomeAssistantError):
     """Error to indicate there is invalid auth."""
-
-
-class InvalidHost(exceptions.HomeAssistantError):
-    """Error to indicate invalid host format."""
