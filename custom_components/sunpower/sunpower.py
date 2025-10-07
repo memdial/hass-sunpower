@@ -97,7 +97,7 @@ class SunPowerMonitor:
     
     @staticmethod
     def check_localapi_support(host: str, timeout: int = 30) -> dict:
-        """Check if PVS supports LocalAPI by querying supervisor/info.
+        """Check if PVS supports LocalAPI by actually testing the endpoint.
         
         Returns dict with:
         - supported: bool
@@ -138,9 +138,22 @@ class SunPowerMonitor:
             result["version"] = version
             result["serial"] = serial
             
-            # Check if firmware supports LocalAPI
+            # Actually test if LocalAPI endpoint exists (not just build number)
+            # Test the /auth endpoint which is the actual LocalAPI path used
             if build and build >= SunPowerMonitor.MIN_LOCALAPI_BUILD:
-                result["supported"] = True
+                try:
+                    test_resp = requests.get(
+                        "http://{0}/auth".format(host),
+                        timeout=5
+                    )
+                    # If we get anything other than 404, LocalAPI exists
+                    # (401/403 means auth required, which is expected)
+                    if test_resp.status_code != 404:
+                        result["supported"] = True
+                    else:
+                        result["error"] = "Build {0} but LocalAPI endpoints not found (404)".format(build)
+                except Exception:
+                    result["error"] = "Build {0} but LocalAPI endpoint test failed".format(build)
             else:
                 result["error"] = "Firmware build {0} is too old. LocalAPI requires build {1}+".format(build, SunPowerMonitor.MIN_LOCALAPI_BUILD)
             

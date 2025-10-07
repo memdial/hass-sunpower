@@ -283,6 +283,10 @@ def sunpower_fetch(
     except (ParseException, ConnectionException) as error:
         raise UpdateFailed from error
 
+    if not sunpower_data or "devices" not in sunpower_data:
+        _LOGGER.error("Invalid PVS data structure: %s", sunpower_data)
+        raise UpdateFailed("PVS returned invalid data structure - missing 'devices' key")
+
     data = convert_sunpower_data(sunpower_data)
     if ESS_DEVICE_TYPE in data:  # Look for an ESS in PVS data
         use_ess = True
