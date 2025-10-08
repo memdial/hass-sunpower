@@ -73,6 +73,11 @@ def create_vmeter(data):
     freq_avg = sum(freq) / len(freq) if len(freq) > 0 else None
     volts_avg = sum(volts) / len(volts) if len(volts) > 0 else None
 
+    # Check if PVS device exists before trying to access it
+    if PVS_DEVICE_TYPE not in data or not data[PVS_DEVICE_TYPE]:
+        _LOGGER.warning("PVS device not found in data, skipping virtual meter creation")
+        return data
+    
     pvs_serial = next(iter(data[PVS_DEVICE_TYPE]))  # only one PVS
     vmeter_serial = f"{pvs_serial}pv"
     data.setdefault(METER_DEVICE_TYPE, {})[vmeter_serial] = {
@@ -223,6 +228,11 @@ def convert_ess_data(ess_data, data):
     if True:
         # Generate a usable serial number for this virtual device, use PVS serial as base
         # since we must be talking through one and it has a serial
+        # Check if PVS device exists before trying to access it
+        if PVS_DEVICE_TYPE not in data or not data[PVS_DEVICE_TYPE]:
+            _LOGGER.warning("PVS device not found in data, skipping SunVault virtual device creation")
+            return data
+        
         pvs_serial = next(iter(data[PVS_DEVICE_TYPE]))  # only one PVS
         sunvault_serial = f"sunvault_{pvs_serial}"
         data[SUNVAULT_DEVICE_TYPE] = {sunvault_serial: {}}
