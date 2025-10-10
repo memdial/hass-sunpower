@@ -122,24 +122,40 @@ def convert_ess_data(ess_data, data):
     sunvault_power_inputs = []
     sunvault_power_outputs = []
     sunvault_state = "working"
+    
+    # Ensure device types exist in data
+    if BATTERY_DEVICE_TYPE not in data:
+        _LOGGER.warning("BATTERY_DEVICE_TYPE not found in data, skipping battery ESS data conversion")
+        data[BATTERY_DEVICE_TYPE] = {}
+    if ESS_DEVICE_TYPE not in data:
+        _LOGGER.warning("ESS_DEVICE_TYPE not found in data, skipping ESS data conversion")
+        data[ESS_DEVICE_TYPE] = {}
+    if HUBPLUS_DEVICE_TYPE not in data:
+        _LOGGER.warning("HUBPLUS_DEVICE_TYPE not found in data, skipping HubPlus data conversion")
+        data[HUBPLUS_DEVICE_TYPE] = {}
+    
     for device in ess_data["ess_report"]["battery_status"]:
-        data[BATTERY_DEVICE_TYPE][device["serial_number"]]["battery_amperage"] = device[
+        serial = device["serial_number"]
+        if serial not in data[BATTERY_DEVICE_TYPE]:
+            _LOGGER.warning(f"Battery {serial} not found in PVS data, skipping")
+            continue
+        data[BATTERY_DEVICE_TYPE][serial]["battery_amperage"] = device[
             "battery_amperage"
         ]["value"]
-        data[BATTERY_DEVICE_TYPE][device["serial_number"]]["battery_voltage"] = device[
+        data[BATTERY_DEVICE_TYPE][serial]["battery_voltage"] = device[
             "battery_voltage"
         ]["value"]
-        data[BATTERY_DEVICE_TYPE][device["serial_number"]]["customer_state_of_charge"] = device[
+        data[BATTERY_DEVICE_TYPE][serial]["customer_state_of_charge"] = device[
             "customer_state_of_charge"
         ]["value"]
-        data[BATTERY_DEVICE_TYPE][device["serial_number"]]["system_state_of_charge"] = device[
+        data[BATTERY_DEVICE_TYPE][serial]["system_state_of_charge"] = device[
             "system_state_of_charge"
         ]["value"]
-        data[BATTERY_DEVICE_TYPE][device["serial_number"]]["temperature"] = device["temperature"][
+        data[BATTERY_DEVICE_TYPE][serial]["temperature"] = device["temperature"][
             "value"
         ]
-        if data[BATTERY_DEVICE_TYPE][device["serial_number"]]["STATE"] != "working":
-            sunvault_state = data[BATTERY_DEVICE_TYPE][device["serial_number"]]["STATE"]
+        if data[BATTERY_DEVICE_TYPE][serial]["STATE"] != "working":
+            sunvault_state = data[BATTERY_DEVICE_TYPE][serial]["STATE"]
         sunvault_amperages.append(device["battery_amperage"]["value"])
         sunvault_voltages.append(device["battery_voltage"]["value"])
         sunvault_temperatures.append(device["temperature"]["value"])
@@ -160,71 +176,79 @@ def convert_ess_data(ess_data, data):
             sunvault_power_inputs.append(0)
             sunvault_power_outputs.append(0)
     for device in ess_data["ess_report"]["ess_status"]:
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["enclosure_humidity"] = device[
+        serial = device["serial_number"]
+        if serial not in data[ESS_DEVICE_TYPE]:
+            _LOGGER.warning(f"ESS {serial} not found in PVS data, skipping")
+            continue
+        data[ESS_DEVICE_TYPE][serial]["enclosure_humidity"] = device[
             "enclosure_humidity"
         ]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["enclosure_temperature"] = device[
+        data[ESS_DEVICE_TYPE][serial]["enclosure_temperature"] = device[
             "enclosure_temperature"
         ]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["agg_power"] = device["ess_meter_reading"][
+        data[ESS_DEVICE_TYPE][serial]["agg_power"] = device["ess_meter_reading"][
             "agg_power"
         ]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["meter_a_current"] = device[
+        data[ESS_DEVICE_TYPE][serial]["meter_a_current"] = device[
             "ess_meter_reading"
         ]["meter_a"]["reading"]["current"]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["meter_a_power"] = device[
+        data[ESS_DEVICE_TYPE][serial]["meter_a_power"] = device[
             "ess_meter_reading"
         ]["meter_a"]["reading"]["power"]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["meter_a_voltage"] = device[
+        data[ESS_DEVICE_TYPE][serial]["meter_a_voltage"] = device[
             "ess_meter_reading"
         ]["meter_a"]["reading"]["voltage"]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["meter_b_current"] = device[
+        data[ESS_DEVICE_TYPE][serial]["meter_b_current"] = device[
             "ess_meter_reading"
         ]["meter_b"]["reading"]["current"]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["meter_b_power"] = device[
+        data[ESS_DEVICE_TYPE][serial]["meter_b_power"] = device[
             "ess_meter_reading"
         ]["meter_b"]["reading"]["power"]["value"]
-        data[ESS_DEVICE_TYPE][device["serial_number"]]["meter_b_voltage"] = device[
+        data[ESS_DEVICE_TYPE][serial]["meter_b_voltage"] = device[
             "ess_meter_reading"
         ]["meter_b"]["reading"]["voltage"]["value"]
     if True:
         device = ess_data["ess_report"]["hub_plus_status"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["contactor_position"] = device[
-            "contactor_position"
-        ]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["grid_frequency_state"] = device[
-            "grid_frequency_state"
-        ]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["grid_phase1_voltage"] = device[
-            "grid_phase1_voltage"
-        ]["value"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["grid_phase2_voltage"] = device[
-            "grid_phase2_voltage"
-        ]["value"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["grid_voltage_state"] = device[
-            "grid_voltage_state"
-        ]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["hub_humidity"] = device[
-            "hub_humidity"
-        ]["value"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["hub_temperature"] = device[
-            "hub_temperature"
-        ]["value"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["inverter_connection_voltage"] = device[
-            "inverter_connection_voltage"
-        ]["value"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["load_frequency_state"] = device[
-            "load_frequency_state"
-        ]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["load_phase1_voltage"] = device[
-            "load_phase1_voltage"
-        ]["value"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["load_phase2_voltage"] = device[
-            "load_phase2_voltage"
-        ]["value"]
-        data[HUBPLUS_DEVICE_TYPE][device["serial_number"]]["main_voltage"] = device[
-            "main_voltage"
-        ]["value"]
+        serial = device["serial_number"]
+        if serial not in data[HUBPLUS_DEVICE_TYPE]:
+            _LOGGER.warning(f"HubPlus {serial} not found in PVS data, skipping")
+        else:
+            data[HUBPLUS_DEVICE_TYPE][serial]["contactor_position"] = device[
+                "contactor_position"
+            ]
+            data[HUBPLUS_DEVICE_TYPE][serial]["grid_frequency_state"] = device[
+                "grid_frequency_state"
+            ]
+            data[HUBPLUS_DEVICE_TYPE][serial]["grid_phase1_voltage"] = device[
+                "grid_phase1_voltage"
+            ]["value"]
+            data[HUBPLUS_DEVICE_TYPE][serial]["grid_phase2_voltage"] = device[
+                "grid_phase2_voltage"
+            ]["value"]
+            data[HUBPLUS_DEVICE_TYPE][serial]["grid_voltage_state"] = device[
+                "grid_voltage_state"
+            ]
+            data[HUBPLUS_DEVICE_TYPE][serial]["hub_humidity"] = device[
+                "hub_humidity"
+            ]["value"]
+            data[HUBPLUS_DEVICE_TYPE][serial]["hub_temperature"] = device[
+                "hub_temperature"
+            ]["value"]
+            data[HUBPLUS_DEVICE_TYPE][serial]["inverter_connection_voltage"] = device[
+                "inverter_connection_voltage"
+            ]["value"]
+            data[HUBPLUS_DEVICE_TYPE][serial]["load_frequency_state"] = device[
+                "load_frequency_state"
+            ]
+            data[HUBPLUS_DEVICE_TYPE][serial]["load_phase1_voltage"] = device[
+                "load_phase1_voltage"
+            ]["value"]
+            data[HUBPLUS_DEVICE_TYPE][serial]["load_phase2_voltage"] = device[
+                "load_phase2_voltage"
+            ]["value"]
+            data[HUBPLUS_DEVICE_TYPE][serial]["main_voltage"] = device[
+                "main_voltage"
+            ]["value"]
     if True:
         # Generate a usable serial number for this virtual device, use PVS serial as base
         # since we must be talking through one and it has a serial

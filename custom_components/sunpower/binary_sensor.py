@@ -41,8 +41,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     else:
         _LOGGER.debug("Found No ESS Data")
 
-    if PVS_DEVICE_TYPE not in sunpower_data:
-        _LOGGER.error("Cannot find PVS Entry")
+    if PVS_DEVICE_TYPE not in sunpower_data or not sunpower_data[PVS_DEVICE_TYPE]:
+        _LOGGER.error("Cannot find PVS Entry or PVS data is empty")
     else:
         entities = []
 
