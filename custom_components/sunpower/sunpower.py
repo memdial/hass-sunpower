@@ -241,23 +241,19 @@ class SunPowerMonitor:
             if retry_count < max_retries:
                 # Retry on timeout
                 return self._vars(names=names, match=match, cache=cache, fmt_obj=fmt_obj, retry_count=retry_count + 1)
-            raise ConnectionException("Request timeout after retries")
+            raise ConnectionException(f"Request timeout after retries: {error}")
         except requests.exceptions.RequestException as error:
-            raise ConnectionException("Failed to query device variables")
+            raise ConnectionException(f"Failed to query device variables: {error}. URL: {self.base}/vars, params: {params}")
         except (simplejson.errors.JSONDecodeError, ValueError) as error:
-            raise ParseException("Failed to parse device response")
+            raise ParseException(f"Failed to parse device response: {error}")
 
     def _fetch_meters(self, use_cache=True):
         """Fetch all meter variables and group by device index.
         
         use_cache: if True and cache exists, use cached data; if False, refresh cache
         """
-        # On first call or when not using cache, create/refresh the cache with match parameter
-        # On subsequent calls, use the cache without match for faster response
-        if use_cache and self._cache_initialized:
-            data = self._vars(cache="mdata", fmt_obj=True)
-        else:
-            data = self._vars(match="meter", cache="mdata", fmt_obj=True)
+        # LocalAPI doesn't support the cache parameter, so we always use match
+        data = self._vars(match="meter", fmt_obj=True)
         
         # Group by meter index (e.g., /sys/devices/meter/0/field -> meter 0)
         meters = {}
@@ -279,12 +275,8 @@ class SunPowerMonitor:
         
         use_cache: if True and cache exists, use cached data; if False, refresh cache
         """
-        # On first call or when not using cache, create/refresh the cache with match parameter
-        # On subsequent calls, use the cache without match for faster response
-        if use_cache and self._cache_initialized:
-            data = self._vars(cache="idata", fmt_obj=True)
-        else:
-            data = self._vars(match="inverter", cache="idata", fmt_obj=True)
+        # LocalAPI doesn't support the cache parameter, so we always use match
+        data = self._vars(match="inverter", fmt_obj=True)
         
         inverters = {}
         for var_path, value in data.items():
@@ -305,11 +297,8 @@ class SunPowerMonitor:
         
         use_cache: if True and cache exists, use cached data; if False, refresh cache
         """
-        # System info changes rarely, so cache is very beneficial
-        if use_cache and self._cache_initialized:
-            data = self._vars(cache="sysinfo", fmt_obj=True)
-        else:
-            data = self._vars(match="info", cache="sysinfo", fmt_obj=True)
+        # LocalAPI doesn't support the cache parameter, so we always use match
+        data = self._vars(match="info", fmt_obj=True)
         return data
 
     @staticmethod
@@ -421,7 +410,9 @@ class SunPowerMonitor:
             inverters = self._fetch_inverters(use_cache=use_cache)
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning("Failed to fetch inverters: {0}".format(e))
+            import traceback
+            logging.getLogger(__name__).error("Failed to fetch inverters: {0}".format(e))
+            logging.getLogger(__name__).error("Traceback: {0}".format(traceback.format_exc()))
             inverters = {}
         
         for path, inv in inverters.items():

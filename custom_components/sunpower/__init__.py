@@ -103,18 +103,32 @@ def create_vmeter(data):
 def convert_sunpower_data(sunpower_data):
     """Convert PVS data into indexable format data[device_type][serial]"""
     data = {}
+    
+    # Log total device count
+    total_devices = len(sunpower_data.get("devices", []))
+    _LOGGER.info(f"Processing {total_devices} devices from API")
+    
     for device in sunpower_data["devices"]:
-        data.setdefault(device["DEVICE_TYPE"], {})[device["SERIAL"]] = device
+        device_type = device.get("DEVICE_TYPE", "UNKNOWN")
+        serial = device.get("SERIAL", "UNKNOWN")
+        data.setdefault(device_type, {})[serial] = device
 
     # Log device types found for debugging
     device_types = list(data.keys())
-    _LOGGER.debug(f"Device types found in API response: {device_types}")
+    device_counts = {dt: len(data[dt]) for dt in device_types}
+    _LOGGER.info(f"Device types found: {device_counts}")
+    
+    # Check for expected device types
     if PVS_DEVICE_TYPE not in data:
-        _LOGGER.warning(f"PVS device type not found in API response. Available types: {device_types}")
-        # Log first few devices to see what we're getting
-        sample_devices = sunpower_data["devices"][:3] if len(sunpower_data["devices"]) > 0 else []
-        for dev in sample_devices:
-            _LOGGER.warning(f"Sample device: TYPE={dev.get('DEVICE_TYPE')}, SERIAL={dev.get('SERIAL')}, MODEL={dev.get('MODEL')}")
+        _LOGGER.error(f"CRITICAL: PVS device type '{PVS_DEVICE_TYPE}' not found!")
+        _LOGGER.error(f"Available device types: {device_types}")
+        # Log ALL devices to see what we're getting
+        for i, dev in enumerate(sunpower_data["devices"][:10]):  # First 10 devices
+            _LOGGER.error(f"Device {i+1}: TYPE='{dev.get('DEVICE_TYPE')}', SERIAL={dev.get('SERIAL')}, MODEL={dev.get('MODEL')}")
+    
+    if INVERTER_DEVICE_TYPE not in data:
+        _LOGGER.error(f"CRITICAL: Inverter device type '{INVERTER_DEVICE_TYPE}' not found!")
+        _LOGGER.error(f"Available device types: {device_types}")
 
     create_vmeter(data)
 

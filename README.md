@@ -31,6 +31,12 @@ This fork adds automatic LocalAPI support for newer PVS firmware (build >= 61840
 - Reduced load on PVS system
 - Cache resets on Home Assistant restart to ensure optimal performance
 
+### Recent Bug Fixes
+- **Fixed LocalAPI 400 errors**: Removed unsupported cache parameter from /vars endpoint calls
+- **Fixed KeyError crashes**: Added defensive checks to prevent crashes when device data is temporarily unavailable
+- **Improved error logging**: Added detailed diagnostics to help troubleshoot connection issues
+- **Better resilience**: Integration now gracefully handles missing PVS, inverter, or meter data
+
 ### LocalAPI Documentation
 For technical details on the LocalAPI implementation, see:
 - [LocalAPI Documentation](https://github.com/SunStrong-Management/pypvs/blob/main/doc/LocalAPI.md) - Comprehensive guide to Varserver FCGI endpoints
