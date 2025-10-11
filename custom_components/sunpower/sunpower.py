@@ -252,7 +252,9 @@ class SunPowerMonitor:
         
         use_cache: if True and cache exists, use cached data; if False, refresh cache
         """
-        # LocalAPI doesn't support the cache parameter, so we always use match
+        # Note: LocalAPI supports cache parameter but we don't use it for simplicity.
+        # With 120s polling intervals, the performance benefit is negligible and
+        # avoiding cache state management makes the integration more reliable.
         data = self._vars(match="meter", fmt_obj=True)
         
         # Group by meter index (e.g., /sys/devices/meter/0/field -> meter 0)
@@ -275,7 +277,9 @@ class SunPowerMonitor:
         
         use_cache: if True and cache exists, use cached data; if False, refresh cache
         """
-        # LocalAPI doesn't support the cache parameter, so we always use match
+        # Note: LocalAPI supports cache parameter but we don't use it for simplicity.
+        # With 120s polling intervals, the performance benefit is negligible and
+        # avoiding cache state management makes the integration more reliable.
         data = self._vars(match="inverter", fmt_obj=True)
         
         inverters = {}
@@ -297,7 +301,9 @@ class SunPowerMonitor:
         
         use_cache: if True and cache exists, use cached data; if False, refresh cache
         """
-        # LocalAPI doesn't support the cache parameter, so we always use match
+        # Note: LocalAPI supports cache parameter but we don't use it for simplicity.
+        # With 120s polling intervals, the performance benefit is negligible and
+        # avoiding cache state management makes the integration more reliable.
         data = self._vars(match="info", fmt_obj=True)
         return data
 

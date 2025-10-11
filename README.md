@@ -32,7 +32,7 @@ This fork adds automatic LocalAPI support for newer PVS firmware (build >= 61840
 - Cache resets on Home Assistant restart to ensure optimal performance
 
 ### Recent Bug Fixes
-- **Fixed LocalAPI 400 errors**: Removed unsupported cache parameter from /vars endpoint calls
+- **Fixed LocalAPI reliability issues**: Simplified /vars endpoint calls by removing cache parameter. While LocalAPI supports caching, it adds complexity and the performance benefit is negligible at 120-second polling intervals. This change improves reliability and eliminates potential cache state issues.
 - **Fixed KeyError crashes**: Added defensive checks to prevent crashes when device data is temporarily unavailable
 - **Improved error logging**: Added detailed diagnostics to help troubleshoot connection issues
 - **Better resilience**: Integration now gracefully handles missing PVS, inverter, or meter data
