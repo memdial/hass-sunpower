@@ -106,6 +106,16 @@ def convert_sunpower_data(sunpower_data):
     for device in sunpower_data["devices"]:
         data.setdefault(device["DEVICE_TYPE"], {})[device["SERIAL"]] = device
 
+    # Log device types found for debugging
+    device_types = list(data.keys())
+    _LOGGER.debug(f"Device types found in API response: {device_types}")
+    if PVS_DEVICE_TYPE not in data:
+        _LOGGER.warning(f"PVS device type not found in API response. Available types: {device_types}")
+        # Log first few devices to see what we're getting
+        sample_devices = sunpower_data["devices"][:3] if len(sunpower_data["devices"]) > 0 else []
+        for dev in sample_devices:
+            _LOGGER.warning(f"Sample device: TYPE={dev.get('DEVICE_TYPE')}, SERIAL={dev.get('SERIAL')}, MODEL={dev.get('MODEL')}")
+
     create_vmeter(data)
 
     return data
