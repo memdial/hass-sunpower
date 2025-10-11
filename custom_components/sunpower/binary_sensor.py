@@ -152,6 +152,12 @@ class SunPowerState(SunPowerEntity, BinarySensorEntity):
     @property
     def state(self):
         """Get the current value"""
+        # Check if device type and device exist in coordinator data
+        if (
+            self._device_type not in self.coordinator.data
+            or self.base_unique_id not in self.coordinator.data[self._device_type]
+        ):
+            return None
         return self.coordinator.data[self._device_type][self.base_unique_id][self._field]
 
     @property

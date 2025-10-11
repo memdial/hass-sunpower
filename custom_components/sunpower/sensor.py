@@ -176,6 +176,13 @@ class SunPowerSensor(SunPowerEntity, SensorEntity):
     @property
     def native_value(self):
         """Get the current value"""
+        # Check if device type and device exist in coordinator data
+        if (
+            self._device_type not in self.coordinator.data
+            or self.base_unique_id not in self.coordinator.data[self._device_type]
+        ):
+            return None
+        
         if self._my_device_class == SensorDeviceClass.POWER_FACTOR:
             try:
                 value = float(
