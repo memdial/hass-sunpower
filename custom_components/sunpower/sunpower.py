@@ -1,5 +1,8 @@
 """SunPower PVS client with automatic LocalAPI/Legacy CGI fallback."""
 
+import logging
+import traceback
+
 import requests
 import simplejson
 from urllib.parse import urlencode
@@ -234,6 +237,17 @@ class SunPowerMonitor:
                 else:
                     raise ConnectionException("Authentication failed after retries")
             
+            # Handle 400 Bad Request - might indicate LocalAPI not fully supported
+            if resp.status_code == 400:
+                # Log the response body for debugging
+                try:
+                    error_body = resp.text
+                    logger = logging.getLogger(__name__)
+                    logger.debug(f"400 Bad Request response body: {error_body}")
+                except Exception:
+                    pass
+                raise ConnectionException(f"Bad Request (400) - LocalAPI endpoint may not support these parameters. URL: {self.base}/vars, params: {params}")
+            
             resp.raise_for_status()
             data = resp.json()
             return data
@@ -242,6 +256,9 @@ class SunPowerMonitor:
                 # Retry on timeout
                 return self._vars(names=names, match=match, cache=cache, fmt_obj=fmt_obj, retry_count=retry_count + 1)
             raise ConnectionException(f"Request timeout after retries: {error}")
+        except requests.exceptions.HTTPError as error:
+            # Catch HTTPError before generic RequestException
+            raise ConnectionException(f"HTTP {error.response.status_code}: {error}. URL: {self.base}/vars, params: {params}")
         except requests.exceptions.RequestException as error:
             raise ConnectionException(f"Failed to query device variables: {error}. URL: {self.base}/vars, params: {params}")
         except (simplejson.errors.JSONDecodeError, ValueError) as error:
@@ -336,41 +353,46 @@ class SunPowerMonitor:
             return self._legacy_generic_command("DeviceList")
         
         # Use LocalAPI for newer firmware
+        logger = logging.getLogger(__name__)
         devices = []
         
         # Determine if we should use cached data (after first successful fetch)
         use_cache = self._cache_initialized
         
+        # PVS device (minimal info) - always add, even if fetch fails
+        pvs_serial = "PVS-{0}".format(self.host)
+        pvs_model = "PVS"
+        pvs_sw_version = "Unknown"
+        
         try:
-            # PVS device (minimal info)
             sysinfo = self._fetch_sysinfo(use_cache=use_cache)
-            # Use actual serial number from PVS, not IP address
-            pvs_serial = sysinfo.get("/sys/info/serialnum", "PVS-{0}".format(self.host))
-            pvs_model = sysinfo.get("/sys/info/model", "PVS")
-            pvs_sw_version = sysinfo.get("/sys/info/sw_rev", "Unknown")
-            devices.append(
-                {
-                    "DEVICE_TYPE": "PVS",
-                    "SERIAL": pvs_serial,
-                    "MODEL": pvs_model,
-                    "TYPE": "PVS",
-                    "DESCR": "{0} {1}".format(pvs_model, pvs_serial),
-                    "STATE": "working",
-                    "sw_ver": pvs_sw_version,
-                    # Legacy dl_* diagnostics unavailable via this minimal sysinfo; omit
-                }
-            )
+            # Use actual serial number from PVS if available
+            pvs_serial = sysinfo.get("/sys/info/serialnum", pvs_serial)
+            pvs_model = sysinfo.get("/sys/info/model", pvs_model)
+            pvs_sw_version = sysinfo.get("/sys/info/sw_rev", pvs_sw_version)
         except Exception as e:
-            # If sysinfo fails, log but continue with other devices
-            import logging
-            logging.getLogger(__name__).warning("Failed to fetch PVS info: {0}".format(e))
+            # If sysinfo fails, log but use defaults
+            logger.warning("Failed to fetch PVS info, using defaults: {0}".format(e))
+        
+        # Always add PVS device to devices list
+        devices.append(
+            {
+                "DEVICE_TYPE": "PVS",
+                "SERIAL": pvs_serial,
+                "MODEL": pvs_model,
+                "TYPE": "PVS",
+                "DESCR": "{0} {1}".format(pvs_model, pvs_serial),
+                "STATE": "working",
+                "sw_ver": pvs_sw_version,
+                # Legacy dl_* diagnostics unavailable via this minimal sysinfo; omit
+            }
+        )
 
         # Meter devices - with error handling
         try:
             meters = self._fetch_meters(use_cache=use_cache)
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning("Failed to fetch meters: {0}".format(e))
+            logger.warning("Failed to fetch meters: {0}".format(e))
             meters = {}
         
         for path, m in meters.items():
@@ -415,10 +437,8 @@ class SunPowerMonitor:
         try:
             inverters = self._fetch_inverters(use_cache=use_cache)
         except Exception as e:
-            import logging
-            import traceback
-            logging.getLogger(__name__).error("Failed to fetch inverters: {0}".format(e))
-            logging.getLogger(__name__).error("Traceback: {0}".format(traceback.format_exc()))
+            logger.error("Failed to fetch inverters: {0}".format(e))
+            logger.debug("Traceback: {0}".format(traceback.format_exc()))
             inverters = {}
         
         for path, inv in inverters.items():
@@ -463,6 +483,11 @@ class SunPowerMonitor:
         # Mark cache as initialized after first successful fetch
         if not self._cache_initialized and (meters or inverters):
             self._cache_initialized = True
+        
+        # Log summary of what was fetched
+        logger.info("LocalAPI device_list: PVS={0}, Meters={1}, Inverters={2}".format(
+            pvs_serial, len(meters), len(inverters)
+        ))
 
         return {"devices": devices}
 

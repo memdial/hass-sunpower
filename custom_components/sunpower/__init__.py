@@ -127,8 +127,9 @@ def convert_sunpower_data(sunpower_data):
             _LOGGER.error(f"Device {i+1}: TYPE='{dev.get('DEVICE_TYPE')}', SERIAL={dev.get('SERIAL')}, MODEL={dev.get('MODEL')}")
     
     if INVERTER_DEVICE_TYPE not in data:
-        _LOGGER.error(f"CRITICAL: Inverter device type '{INVERTER_DEVICE_TYPE}' not found!")
-        _LOGGER.error(f"Available device types: {device_types}")
+        _LOGGER.warning(f"No inverter devices found - this is normal for some PVS configurations")
+        _LOGGER.info(f"Available device types: {device_types}")
+        _LOGGER.info("Inverter data may be aggregated in meter readings or unavailable via LocalAPI")
 
     create_vmeter(data)
 
