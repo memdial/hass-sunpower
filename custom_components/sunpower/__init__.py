@@ -74,11 +74,12 @@ def create_vmeter(data):
     volts_avg = sum(volts) / len(volts) if len(volts) > 0 else None
 
     # Check if PVS device exists before trying to access it
-    if PVS_DEVICE_TYPE not in data or not data[PVS_DEVICE_TYPE]:
+    pvs_devices = data.get(PVS_DEVICE_TYPE)
+    if not pvs_devices:
         _LOGGER.warning("PVS device not found in data, skipping virtual meter creation")
         return data
     
-    pvs_serial = next(iter(data[PVS_DEVICE_TYPE]))  # only one PVS
+    pvs_serial = next(iter(pvs_devices))  # only one PVS
     vmeter_serial = f"{pvs_serial}pv"
     data.setdefault(METER_DEVICE_TYPE, {})[vmeter_serial] = {
         "SERIAL": vmeter_serial,
@@ -119,14 +120,14 @@ def convert_sunpower_data(sunpower_data):
     _LOGGER.info(f"Device types found: {device_counts}")
     
     # Check for expected device types
-    if PVS_DEVICE_TYPE not in data:
+    if not data.get(PVS_DEVICE_TYPE):
         _LOGGER.error(f"CRITICAL: PVS device type '{PVS_DEVICE_TYPE}' not found!")
         _LOGGER.error(f"Available device types: {device_types}")
         # Log ALL devices to see what we're getting
         for i, dev in enumerate(sunpower_data["devices"][:10]):  # First 10 devices
             _LOGGER.error(f"Device {i+1}: TYPE='{dev.get('DEVICE_TYPE')}', SERIAL={dev.get('SERIAL')}, MODEL={dev.get('MODEL')}")
     
-    if INVERTER_DEVICE_TYPE not in data:
+    if not data.get(INVERTER_DEVICE_TYPE):
         _LOGGER.warning(f"No inverter devices found - this is normal for some PVS configurations")
         _LOGGER.info(f"Available device types: {device_types}")
         _LOGGER.info("Inverter data may be aggregated in meter readings or unavailable via LocalAPI")
@@ -278,11 +279,12 @@ def convert_ess_data(ess_data, data):
         # Generate a usable serial number for this virtual device, use PVS serial as base
         # since we must be talking through one and it has a serial
         # Check if PVS device exists before trying to access it
-        if PVS_DEVICE_TYPE not in data or not data[PVS_DEVICE_TYPE]:
+        pvs_devices = data.get(PVS_DEVICE_TYPE)
+        if not pvs_devices:
             _LOGGER.warning("PVS device not found in data, skipping SunVault virtual device creation")
             return data
         
-        pvs_serial = next(iter(data[PVS_DEVICE_TYPE]))  # only one PVS
+        pvs_serial = next(iter(pvs_devices))  # only one PVS
         sunvault_serial = f"sunvault_{pvs_serial}"
         data[SUNVAULT_DEVICE_TYPE] = {sunvault_serial: {}}
         data[SUNVAULT_DEVICE_TYPE][sunvault_serial]["sunvault_amperage"] = sum(
